@@ -15,6 +15,9 @@
 
 import urllib, urllib2, socket, hashlib, time
 import xbmc, xbmcgui, xbmcaddon
+import inspect
+
+import listenbrainz
 
 ADDON        = xbmcaddon.Addon()
 ADDONID      = ADDON.getAddonInfo('id')
@@ -23,11 +26,11 @@ LANGUAGE     = ADDON.getLocalizedString
 
 socket.setdefaulttimeout(10)
 
-def log(txt):
+def log(txt, level=xbmc.LOGDEBUG):
     if isinstance (txt,str):
         txt = txt.decode("utf-8")
     message = u'%s: %s' % (ADDONID, txt)
-    xbmc.log(msg=message.encode("utf-8"), level=xbmc.LOGDEBUG)
+    xbmc.log(msg=message.encode("utf-8"), level=level)
 
 class Main:
     def __init__( self ):
@@ -36,127 +39,45 @@ class Main:
             xbmc.sleep(1000)
 
     def _service_setup( self ):
-        self.LibrefmURL           = 'http://turtle.libre.fm/'
-        self.ClientId             = 'xbm'
-        self.ClientVersion        = '0.2'
-        self.ClientProtocol       = '1.2.1'
+        self.ListenBrainzURL      = 'https://beta-api.listenbrainz.org/'
         self.Exit                 = False
         self.Monitor              = MyMonitor(action = self._get_settings)
         self._get_settings()
 
     def _get_settings( self ):
-        log('#DEBUG# reading settings')
+        log('reading settings')
         service    = []
-        LibrefmSubmitSongs = ADDON.getSetting('librefmsubmitsongs') == 'true'
-        LibrefmSubmitRadio = ADDON.getSetting('librefmsubmitradio') == 'true'
-        LibrefmUser        = ADDON.getSetting('librefmuser').lower()
-        LibrefmPass        = ADDON.getSetting('librefmpass')
-        if (LibrefmSubmitSongs or LibrefmSubmitRadio) and LibrefmUser and LibrefmPass:
-            # [service, auth-url, user, pass, submitsongs, submitradio, sessionkey, np-url, submit-url, auth-fail, failurecount, timercounter, timerexpiretime, queue]
-            service = ['librefm', self.LibrefmURL, LibrefmUser, LibrefmPass, LibrefmSubmitSongs, LibrefmSubmitRadio, '', '', '', False, 0, 0, 0, []]
+        ListenBrainzSubmitSongs = ADDON.getSetting('listenbrainzsubmitsongs') == 'true'
+        ListenBrainzSubmitRadio = ADDON.getSetting('listenbrainzsubmitradio') == 'true'
+        ListenBrainzToken       = ADDON.getSetting('listenbrainztoken').lower()
+        if (ListenBrainzSubmitSongs or ListenBrainzSubmitRadio) and ListenBrainzToken:
+            # [TODO:remove, url, token, TODO:remove, submitsongs, submitradio, sessionkey, np-url, submit-url, auth-fail, failurecount, timercounter, timerexpiretime, queue]
+            service = ['TODO:REMOVE', self.ListenBrainzURL, ListenBrainzToken, 'TODO:REMOVE', ListenBrainzSubmitSongs, ListenBrainzSubmitRadio, '', '', '', False, 0, 0, 0, []]
             self.Player = MyPlayer(action = self._service_scrobble, service = service)
 
     def _service_scrobble( self, tags, service ):
         tstamp = int(time.time())
         # don't proceed if we had an authentication failure
         if not service[9]:
-            # test if we are authenticated
-            if not service[6]:
-                # authenticate                    
-                service = self._service_authenticate(service, str(tstamp))
-            # only proceed if authentication was succesful
-            if service[6]:
-                # check if there's something in our queue for submission
-                if len(service[13]) != 0:
-                    service = self._service_submit(service, tstamp)
-                # nowplaying announce if we still have a valid session key after submission and have an artist and title
-                if service[6] and tags and tags[0] and tags[2]:
-                    service = self._service_nowplaying(service, tags)
-                    # check if the song qualifies for submission
-                    if (service[4] and not (tags[7].startswith('http://') or tags[7].startswith('rtmp://'))) or (service[5] and (tags[7].startswith('http://') or tags[7].startswith('rtmp://'))):
-                        # add track to the submission queue
-                        service[13].extend([tags])
-
-    def _service_authenticate( self, service, timestamp ):
-        # don't proceed if timeout timer has not expired
-        if service[12] > int(timestamp):
-            return service
-        # create a pass hash
-        md5pass = hashlib.md5()
-        md5pass.update(service[3])
-        # generate an authentication token
-        md5token = hashlib.md5()
-        md5token.update(md5pass.hexdigest() + timestamp)
-        url = service[1] + '?hs=true' + '&p=' + self.ClientProtocol + '&c=' + self.ClientId + '&v=' + self.ClientVersion + '&u=' + service[2] + '&t=' + timestamp + '&a=' + md5token.hexdigest()
-        try:
-            # authentication request
-            req = urllib2.urlopen(url)
-            # authentication response
-            result = req.read()
-            req.close()
-            log('#DEBUG# %s authentication %s' % (service[0], result))
-            data = result.split('\n')
-            log('#DEBUG# authentication result %s' % data)
-        except:
-            service = self._service_fail( service, True )
-            log('%s failed to connect for authentication' % service[0])   
-            return service         
-        # parse results
-        if data[0] == 'OK':
-            # get sessionid, np-url and submit url
-            service[6] = data[1]
-            service[7] = data[2]
-            service[8] = data[3]
-            # reset failure count
-            service[10] = 0
-            # reset timer
-            service[11] = 0
-            service[12] = 0
-        elif data[0] == 'BANNED':
-            # uh-oh
-            xbmc.executebuiltin((u'Notification(%s,%s)' % ('Scrobbler: ' + service[0], LANGUAGE(32003))).encode('utf-8', 'ignore'))
-            log('%s has banned our app id' % service[0])
-            # disable the service, the monitor class will pick up the changes
-            ADDON.setSetting('%ssubmitsongs' % service[0], 'false')
-            ADDON.setSetting('%ssubmitradio' % service[0], 'false')
-        elif data[0] == 'BADAUTH':
-            # user has to change username / password
-            xbmc.executebuiltin((u'Notification(%s,%s)' % ('Scrobbler: ' + service[0], LANGUAGE(32001))).encode('utf-8', 'ignore'))
-            log('%s invalid credentials' % service[0])
-            service[9] = True
-        elif data[0] == 'BADTIME':
-            # user needs to change the system time
-            xbmc.executebuiltin((u'Notification(%s,%s)' % ('Scrobbler: ' + service[0], LANGUAGE(32002))).encode('utf-8', 'ignore'))
-            log('%s invalid system time' % service[0])
-            self.Exit = True
-        else:
-            # temporary server error
-            service = self._service_fail( service, True )
-            log('%s server error while authenticating: %s' % (service[0], data[0]))
-        return service
+            # check if there's something in our queue for submission
+            #TODO: implement submit
+#            if len(service[13]) != 0:
+#                service = self._service_submit(service, tstamp)
+            # nowplaying announce if we still have a valid session key after submission and have an artist and title
+            if tags and tags[0] and tags[2]:
+                service = self._service_nowplaying(service, tags)
+                # check if the song qualifies for submission
+                if (service[4] and not (tags[7].startswith('http://') or tags[7].startswith('rtmp://'))) or (service[5] and (tags[7].startswith('http://') or tags[7].startswith('rtmp://'))):
+                    # add track to the submission queue
+                    service[13].extend([tags])
 
     def _service_nowplaying( self, service, tags ):
-        url = service[7]
-        data = {'s':service[6], 'a':tags[0], 'b':tags[1], 't':tags[2], 'l':tags[3], 'n':tags[4]}
         try:
-            # nowplaying request
-            body = urllib.urlencode(data)
-            req = urllib2.Request(url, body)
-            # nowplaying response
-            response = urllib2.urlopen(req)
-            result = response.read()
-            response.close()
-            data = result.split('\n')
-        except:
-            service = self._service_fail( service, False )
-            log('%s failed to connect for nowplaying notification' % service[0])
-            return service
-        log('#DEBUG# %s nowplaying announce result %s' % (service[0], data[0]))
-        # parse results
-        if data[0] == 'BADSESSION':
-            # drop our session key
-            service[6] = ''
-            log('%s bad session for nowplaying notification' % service[0])
+            data = listenbrainz.playing_now(self.ListenBrainzURL, service[2], tags[0], tags[1], tags[2], tags[8])
+            log('nowplaying announce result %s' % (data))
+        except listenbrainz.ListenBrainzException as error:
+            log('Error: ' + repr(error))
+
         return service
 
     def _service_submit( self, service, tstamp ):
@@ -197,7 +118,7 @@ class Main:
         # return if we have nothing to submit
         if not submit:
             return service
-        log('#DEBUG# %s submission data %s' % (service[0], data))
+        log('submission data %s' % (data))
         try:
             # submit request
             body = urllib.urlencode(data)
@@ -209,9 +130,9 @@ class Main:
             data = result.split('\n')
         except:
             service = self._service_fail( service, False )
-            log('%s failed to connect for song submission' % service[0])
+            log('failed to connect for song submission')
             return service
-        log('#DEBUG# %s submit result %s' % (service[0], data[0]))
+        log('submit result %s' % (data[0]))
         # parse results
         if data[0] == 'OK':
             # empty our queue
@@ -219,11 +140,11 @@ class Main:
         elif data[0] == 'BADSESSION':
             # drop our session key
             service[6] = ''
-            log('%s bad session for song submission' % service[0])
+            log('bad session for song submission')
         else:
             # temporary server error
             service = self._service_fail( service, False )
-            log('%s failure for song submission: %s' % (service[0], data[0]))
+            log('failure for song submission: %s' % (data[0]))
         return service
 
     def _service_fail( self, service, timer ):
@@ -252,7 +173,7 @@ class MyPlayer(xbmc.Player):
         self.service = kwargs['service']
         self.Audio = False
         self.Count = 0
-        log('#DEBUG# Player Class Init')
+        log('Player Class Init')
 
     def onPlayBackStarted( self ):
         # only do something if we're playing audio
@@ -261,7 +182,7 @@ class MyPlayer(xbmc.Player):
             self.Audio = True
             # keep track of onPlayBackStarted events http://trac.xbmc.org/ticket/13064
             self.Count += 1
-            log('#DEBUG# onPlayBackStarted: %i' % self.Count)
+            log('onPlayBackStarted: %i' % self.Count)
             # tags are not available instantly and we don't what to announce right away as the user might be skipping through the songs
             xbmc.sleep(2000)
             # don't announce if user already skipped to the next track
@@ -274,19 +195,19 @@ class MyPlayer(xbmc.Player):
                 self.action(tags, self.service)
             else:
                 # multiple onPlayBackStarted events occurred, only act on the last one
-                log('#DEBUG# skipping onPlayBackStarted event')
+                log('skipping onPlayBackStarted event')
                 self.Count -= 1
 
     def onPlayBackEnded( self ):
         if self.Audio:
             self.Audio = False
-            log('#DEBUG# onPlayBackEnded')
+            log('onPlayBackEnded')
             self.action(None, self.service)
 
     def onPlayBackStopped( self ):
         if self.Audio:
             self.Audio = False
-            log('#DEBUG# onPlayBackStopped')
+            log('onPlayBackStopped')
             self.action(None, self.service)
 
     def _get_tags( self ):
@@ -299,6 +220,7 @@ class MyPlayer(xbmc.Player):
         if int(duration) <= 0:
             duration = str(int(self.getTotalTime()))
         track       = str(self.getMusicInfoTag().getTrack())
+        #TODO: Implement mbids through .getDbId() and subsequent db query
         mbid        = '' # musicbrainz id is not available
         comment     = self.getMusicInfoTag().getComment()
         path        = self.getPlayingFile()
@@ -312,7 +234,7 @@ class MyPlayer(xbmc.Player):
             except:
                 pass
         tracktags   = [artist, album, title, duration, track, mbid, comment, path, timestamp, source]
-        log('#DEBUG# tracktags: %s' % tracktags)
+        log('tracktags: %s' % tracktags)
         return tracktags
 
 class MyMonitor(xbmc.Monitor):
@@ -321,10 +243,11 @@ class MyMonitor(xbmc.Monitor):
         self.action = kwargs['action']
 
     def onSettingsChanged( self ):
-        log('#DEBUG# onSettingsChanged')
+        log('onSettingsChanged')
         self.action()
 
 if ( __name__ == "__main__" ):
     log('script version %s started' % ADDONVERSION)
     Main()
 log('script stopped')
+

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<strings>
+    <string id="30000">General</string>
+    <!-- empty strings from id 30001 to 30003 -->
+    <string id="30004">Submit songs to ListenBrainz.org</string>
+    <string id="30005">Submit streaming radio to ListenBrainz.org</string>
+    <string id="30006">ListenBrainz.org API Token</string>
+    <!-- empty strings from id 30008 to 32000 -->
+    <string id="32001">Authentication error</string>
+    <string id="32002">Invalid time, please adjust your system clock and restart Kodi</string>
+    <string id="32003">Please update the add-on</string>
+</strings>
