@@ -60,9 +60,8 @@ class Main:
         # don't proceed if we had an authentication failure
         if not service[9]:
             # check if there's something in our queue for submission
-            #TODO: implement submit
-#            if len(service[13]) != 0:
-#                service = self._service_submit(service, tstamp)
+            if len(service[13]) != 0:
+                service = self._service_submit(service, tstamp)
             # nowplaying announce if we still have a valid session key after submission and have an artist and title
             if tags and tags[0] and tags[2]:
                 service = self._service_nowplaying(service, tags)
@@ -73,7 +72,7 @@ class Main:
 
     def _service_nowplaying( self, service, tags ):
         try:
-            data = listenbrainz.playing_now(self.ListenBrainzURL, service[2], tags[0], tags[1], tags[2], tags[8])
+            data = listenbrainz.playing_now(self.ListenBrainzURL, service[2], tags[0], tags[1], tags[2])
             log('nowplaying announce result %s' % (data))
         except listenbrainz.ListenBrainzException as error:
             log('Error: ' + repr(error))
@@ -81,89 +80,22 @@ class Main:
         return service
 
     def _service_submit( self, service, tstamp ):
-        # we're allowed to submit 50 tracks max
-        while len(service[13]) > 50:
-            service[13].pop(0)
-        # get the submission url
-        url = service[8]
-        # get the session id
-        data = {'s':service[6]}
-        # create a list of songs to remove from the queue
-        removesongs = []
-        # set submit bool to false
-        submit = False
         # iterate through the queue
-        for count, item in enumerate(service[13]):
-            # only submit items that are at least 30 secs long and have been played at least half or at least 4 minutes
-            if (int(item[3]) > 30) and ((tstamp - int(item[8]) > int(int(item[3])/2)) or (tstamp - int(item[8]) > 240)):
-                key1 = 'a[%i]' % count
-                key2 = 'b[%i]' % count
-                key3 = 't[%i]' % count
-                key4 = 'l[%i]' % count
-                key5 = 'n[%i]' % count
-                key6 = 'i[%i]' % count
-                key7 = 'o[%i]' % count
-                key8 = 'r[%i]' % count
-                key9 = 'm[%i]' % count
-                data.update({key1:item[0], key2:item[1], key3:item[2], key4:item[3], key5:item[4], key6:item[8], key7:item[9], key8:'', key9:item[5]})
-                # we have at least one item to submit
-                submit = True
-            else:
-                # keep a list of songs that don't qualify
-                removesongs.append(count)
-        # remove disqualified songs, starting with the last one (else we mess up the list order and incorrectly remove items)
-        removesongs.reverse()
-        for song in removesongs:
-            service[13].pop(song)
-        # return if we have nothing to submit
-        if not submit:
-            return service
-        log('submission data %s' % (data))
-        try:
-            # submit request
-            body = urllib.urlencode(data)
-            req = urllib2.Request(url, body)
-            # submit response
-            response = urllib2.urlopen(req)
-            result = response.read()
-            response.close()
-            data = result.split('\n')
-        except:
-            service = self._service_fail( service, False )
-            log('failed to connect for song submission')
-            return service
-        log('submit result %s' % (data[0]))
-        # parse results
-        if data[0] == 'OK':
-            # empty our queue
-            service[13] = []
-        elif data[0] == 'BADSESSION':
-            # drop our session key
-            service[6] = ''
-            log('bad session for song submission')
-        else:
-            # temporary server error
-            service = self._service_fail( service, False )
-            log('failure for song submission: %s' % (data[0]))
-        return service
+        while len(service[13]) > 0:
+            tags = service[13][0]
 
-    def _service_fail( self, service, timer ):
-        timestamp = int(time.time())
-        # increment failure counter
-        service[10] += 1
-        # drop our session key if we encouter three failures
-        if service[10] > 2:
-            service[6] = ''
-        # set a timer if failure occurred during authentication phase
-        if timer:
-            # wrap timer if we cycled through all timeout values
-            if service[11] == 0 or service[11] == 7680:
-                service[11] = 60
+            # only submit items that are at least 30 secs long and have been played at least half or at least 4 minutes
+            if (int(tags[3]) > 30) and ((tstamp - int(tags[8]) > int(int(tags[3])/2)) or (tstamp - int(tags[8]) > 240)):
+                try:
+                    data = listenbrainz.submit(self.ListenBrainzURL, service[2], tags[0], tags[1], tags[2], tags[8])
+                    log('submit result %s' % (data))
+                    service[13].pop(0)
+                except listenbrainz.ListenBrainzException as error:
+                    log('Error: ' + repr(error))
+                    return service
             else:
-                # increment timer
-                service[11] = 2 * service[11]
-        # set timer expire time
-        service[12] = timestamp + service[11]
+                service[13].pop(0)
+
         return service
 
 class MyPlayer(xbmc.Player):
