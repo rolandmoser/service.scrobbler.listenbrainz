@@ -1,3 +1,4 @@
+Old changelog from librefm addon:
 2.0.3
 - lanuage update
 - cosmetics
