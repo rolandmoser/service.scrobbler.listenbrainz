@@ -39,7 +39,7 @@ class Main:
             xbmc.sleep(1000)
 
     def _service_setup( self ):
-        self.ListenBrainzURL      = 'https://beta-api.listenbrainz.org/'
+        self.ListenBrainzURL      = 'https://api.listenbrainz.org/'
         self.Exit                 = False
         self.Monitor              = MyMonitor(action = self._get_settings)
         self._get_settings()
@@ -49,7 +49,7 @@ class Main:
         service    = []
         ListenBrainzSubmitSongs = ADDON.getSetting('listenbrainzsubmitsongs') == 'true'
         ListenBrainzSubmitRadio = ADDON.getSetting('listenbrainzsubmitradio') == 'true'
-        ListenBrainzToken       = ADDON.getSetting('listenbrainztoken').lower()
+        ListenBrainzToken       = ADDON.getSetting('listenbrainztoken').strip()
         if (ListenBrainzSubmitSongs or ListenBrainzSubmitRadio) and ListenBrainzToken:
             # [TODO:remove, url, token, TODO:remove, submitsongs, submitradio, sessionkey, np-url, submit-url, auth-fail, failurecount, timercounter, timerexpiretime, queue]
             service = ['TODO:REMOVE', self.ListenBrainzURL, ListenBrainzToken, 'TODO:REMOVE', ListenBrainzSubmitSongs, ListenBrainzSubmitRadio, '', '', '', False, 0, 0, 0, []]
@@ -75,7 +75,7 @@ class Main:
             data = listenbrainz.playing_now(self.ListenBrainzURL, service[2], tags[0], tags[1], tags[2])
             log('nowplaying announce result %s' % (data))
         except listenbrainz.ListenBrainzException as error:
-            log('Error: ' + repr(error))
+            log('Error: ' + repr(error), level=xbmc.LOGERROR)
 
         return service
 
@@ -91,7 +91,7 @@ class Main:
                     log('submit result %s' % (data))
                     service[13].pop(0)
                 except listenbrainz.ListenBrainzException as error:
-                    log('Error: ' + repr(error))
+                    log('Error: ' + repr(error), level=xbmc.LOGERROR)
                     return service
             else:
                 service[13].pop(0)
